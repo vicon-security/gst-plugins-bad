@@ -1816,12 +1816,12 @@ gst_d3d11_decoder_decide_allocation (GstD3D11Decoder * decoder,
         GST_DEBUG_OBJECT (videodec, "Downstream proposed pool");
         decoder->wait_on_pool_full = TRUE;
         /* XXX: hardcoded bound 16, to avoid too large pool size */
-        decoder->downstream_min_buffers = MIN (min, 16);
+        decoder->downstream_min_buffers = 32; //MIN (min, 16); //fix for out of bound memory issue 
       } else {
         GST_DEBUG_OBJECT (videodec, "Downstream didn't propose pool");
         decoder->wait_on_pool_full = FALSE;
         /* don't know how many buffers would be queued by downstream */
-        decoder->downstream_min_buffers = 4;
+        decoder->downstream_min_buffers = 32; //fix for out of bound memory issue
       }
     } else {
       /* We configured our DPB pool already, let's check if our margin can
