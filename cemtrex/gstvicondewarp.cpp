@@ -357,6 +357,11 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
           width = 3840;
           height = 2160;
       }
+      else
+      {
+          width = orig_width;
+          height = orig_height;
+      }
 
       caps_string = g_strdup_printf("video/x-raw, format=NV12, width=%d, height=%d", width, height);
       convcaps = gst_caps_from_string(caps_string);
