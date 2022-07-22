@@ -193,29 +193,6 @@ gst_vicondewarp_init (Gstvicondewarp * filter)
   ctx->height = 480;
   ctx->width = 640;
   ctx->camera = new IMV_CameraInterface;
-  filter->silent = FALSE;
-  filter->dewarpstatus = FALSE;
-  filter->viewtype = 0;
-  filter->mountpos = 0;
-  filter->dewarp_prop = gst_structure_new("props",
-      "view_1_pan", G_TYPE_DOUBLE, 5.0,
-      "view_1_tilt", G_TYPE_DOUBLE, 5.0,
-      "view_1_roll", G_TYPE_DOUBLE, 5.0,
-      "view_1_zoom", G_TYPE_DOUBLE, 110.0,
-      "view_2_pan", G_TYPE_DOUBLE, 5.0,
-      "view_2_tilt", G_TYPE_DOUBLE, 5.0,
-      "view_2_roll", G_TYPE_DOUBLE, 5.0,
-      "view_2_zoom", G_TYPE_DOUBLE, 110.0,
-      "view_3_pan", G_TYPE_DOUBLE, 5.0,
-      "view_3_tilt", G_TYPE_DOUBLE, 5.0,
-      "view_3_roll", G_TYPE_DOUBLE, 5.0,
-      "view_3_zoom", G_TYPE_DOUBLE, 110.0,
-      "view_4_pan", G_TYPE_DOUBLE, 5.0,
-      "view_4_tilt", G_TYPE_DOUBLE, 5.0,
-      "view_4_roll", G_TYPE_DOUBLE, 5.0,
-      "view_4_zoom", G_TYPE_DOUBLE, 110.0,
-      NULL);
-  filter->silent = FALSE;
 }
 
 static void
@@ -324,21 +301,15 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   Gstvicondewarp *filter;
 
   GstSample* from_sample = NULL;
-  GstSample* to_sample = NULL;
-  GstSample* from_sample2 = NULL;
-  GstSample* to_sample2 = NULL;
 
   GstCaps* caps = NULL;
-  GstCaps* convcaps;
   GstMapInfo map, mmap;
   gboolean res;
   const gchar* frmt;
   int width, height;
-  int orig_width, orig_height;
   unsigned char* odata;
   unsigned char* idata;
   const GValue* value;
-  gchar* caps_string;
 
   filter = GST_VICONDEWARP(parent);
 
@@ -347,31 +318,10 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       caps = gst_pad_get_current_caps(pad);
       GstStructure* s = gst_caps_get_structure(caps, 0);
       frmt = gst_structure_get_string(s, "format");
-      res = gst_structure_get_int(s, "width", &orig_width);
-      res |= gst_structure_get_int(s, "height", &orig_height);
+      res = gst_structure_get_int(s, "width", &width);
+      res |= gst_structure_get_int(s, "height", &height);
 
-      from_sample = gst_sample_new(buf, filter->input_caps, NULL, NULL);
-
-      if (orig_width > 3840 || orig_height > 2160)
-      {
-          width = 3840;
-          height = 2160;
-      }
-      else
-      {
-          width = orig_width;
-          height = orig_height;
-      }
-
-      caps_string = g_strdup_printf("video/x-raw, format=NV12, width=%d, height=%d", width, height);
-      convcaps = gst_caps_from_string(caps_string);
-      g_free(caps_string);
-
-      to_sample = gst_video_convert_sample(from_sample, convcaps, GST_CLOCK_TIME_NONE, NULL);
-
-      GstBuffer* buffer = gst_sample_get_buffer(to_sample);
-
-      gst_buffer_map(buffer, &map, (GstMapFlags)(GST_MAP_READ));
+      gst_buffer_map(buf, &map, (GstMapFlags)(GST_MAP_READ));
 
       int size = width * height * 3;
       GstBuffer* buf0 = gst_buffer_new_allocate(NULL, size, NULL);
@@ -472,32 +422,12 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       ctx->camera->Update();
       memcpy(odata, ctx->outputBuf->data, size);
       gst_buffer_unmap(buf0, &mmap);
-      gst_buffer_unmap(buffer, &map);
+      gst_buffer_unmap(buf, &map);
       buf0->pts = buf->pts;
       buf0->dts = buf->dts;
 
-      from_sample2 = gst_sample_new(buf0, convcaps, NULL, NULL);
-      gst_caps_unref(convcaps);
-
-      caps_string = g_strdup_printf("video/x-raw, format=NV12, width=%d, height=%d", orig_width, orig_height);
-      convcaps = gst_caps_from_string(caps_string);
-      g_free(caps_string);
-      to_sample2 = gst_video_convert_sample(from_sample2, convcaps, GST_CLOCK_TIME_NONE, NULL);
-      gst_caps_unref(convcaps);
-
-      GstBuffer* buffer2 = gst_sample_get_buffer(to_sample2);
-      buffer2->pts = buf->pts;
-      buffer2->dts = buf->dts;
-
-      gst_pad_push(filter->srcpad, buffer2);
-
-      gst_sample_unref(to_sample);
-      gst_sample_unref(from_sample);
-      gst_sample_unref(to_sample2);
-      gst_sample_unref(from_sample2);
-      gst_buffer_unref(buf0);
-      gst_buffer_unref(buffer);
-      gst_buffer_unref(buffer2);
+      gst_pad_push(filter->srcpad, buf0);
+      gst_buffer_unref(buf);
       gst_caps_unref(caps);
   }
   else
