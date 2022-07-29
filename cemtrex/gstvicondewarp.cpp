@@ -173,6 +173,7 @@ gst_vicondewarp_class_init (GstvicondewarpClass * klass)
  * set pad callback functions
  * initialize instance structure
  */
+
 static void
 gst_vicondewarp_init (Gstvicondewarp * filter)
 {
@@ -187,12 +188,7 @@ gst_vicondewarp_init (Gstvicondewarp * filter)
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
   GST_PAD_SET_PROXY_CAPS (filter->srcpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
-  ctx = new DWCONTEXT;
-  ctx->inputBuf = NULL;
-  ctx->outputBuf = NULL;
-  ctx->height = 480;
-  ctx->width = 640;
-  ctx->camera = new IMV_CameraInterface;
+  filter->imv = (IMV_SYNC*)(filter->imv->getInstance());
 }
 
 static void
@@ -300,21 +296,21 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 {
   Gstvicondewarp *filter;
 
-  GstSample* from_sample = NULL;
-
-  GstCaps* caps = NULL;
-  GstMapInfo map, mmap;
-  gboolean res;
-  const gchar* frmt;
-  int width, height;
-  unsigned char* odata;
-  unsigned char* idata;
-  const GValue* value;
-
+  
   filter = GST_VICONDEWARP(parent);
+  filter->imv->Lock(filter->imv);
 
   if (filter->dewarpstatus)
   {
+      GstCaps* caps = NULL;
+      GstMapInfo map, mmap;
+      gboolean res;
+      const gchar* frmt;
+      int width, height;
+      unsigned char* odata;
+      unsigned char* idata;
+      const GValue* value;
+
       caps = gst_pad_get_current_caps(pad);
       GstStructure* s = gst_caps_get_structure(caps, 0);
       frmt = gst_structure_get_string(s, "format");
@@ -330,41 +326,47 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       odata = mmap.data;
       idata = map.data;
 
-      ctx->camera->SetLens((char*)filter->lensname);
+      filter->imv->camera->SetLens((char*)filter->lensname);
 
-      ctx->camera->SetZoomLimits(24, 180);
+      filter->imv->camera->SetZoomLimits(24, 180);
 
-      if (ctx->outputBuf == NULL)
-      {
-          ctx->outputBuf = new IMV_Buffer;
-          ctx->outputBuf->data = new unsigned char[width * height * 4];
-      }
-      ctx->outputBuf->frameWidth = width;
-      ctx->outputBuf->frameHeight = height;
-      ctx->outputBuf->frameX = 0;
-      ctx->outputBuf->frameY = 0;
-      ctx->outputBuf->width = width;
-      ctx->outputBuf->height = height;
-      if (ctx->inputBuf == NULL)
-      {
-          ctx->inputBuf = new IMV_Buffer;
-      }
-      ctx->inputBuf->data = idata;
-      ctx->inputBuf->frameWidth = width;
-      ctx->inputBuf->frameHeight = height;
-      ctx->inputBuf->frameX = 0;
-      ctx->inputBuf->frameY = 0;
-      ctx->inputBuf->width = width;
-      ctx->inputBuf->height = height;
+      
+      filter->imv->outputBuf->data = mmap.data;
+      filter->imv->outputBuf->frameWidth = width;
+      filter->imv->outputBuf->frameHeight = height;
+      filter->imv->outputBuf->frameX = 0;
+      filter->imv->outputBuf->frameY = 0;
+      filter->imv->outputBuf->width = width;
+      filter->imv->outputBuf->height = height;
+      
+      filter->imv->inputBuf->data = idata;
+      filter->imv->inputBuf->frameWidth = width;
+      filter->imv->inputBuf->frameHeight = height;
+      filter->imv->inputBuf->frameX = 0;
+      filter->imv->inputBuf->frameY = 0;
+      filter->imv->inputBuf->width = width;
+      filter->imv->inputBuf->height = height;
 
-      unsigned long iResult = ctx->camera->SetVideoParams(ctx->inputBuf, ctx->outputBuf,
+      unsigned long iResult = filter->imv->camera->SetVideoParams(filter->imv->inputBuf, filter->imv->outputBuf,
           IMV_Defs::E_YUV_NV12, filter->viewtype, filter->mountpos);
       if (iResult == IMV_Defs::E_ERR_OK)
       {
-          char* acsInfo = ctx->camera->GetACS();
-          ctx->camera->SetACS(acsInfo);
+          char* acsInfo = filter->imv->camera->GetACS();
+          filter->imv->camera->SetACS(acsInfo);
       }
-      ctx->camera->SetOutputVideoParams(ctx->outputBuf);
+      else
+      {
+          gst_buffer_unmap(buf0, &mmap);
+          gst_buffer_unmap(buf, &map);
+          buf0->pts = buf->pts;
+          buf0->dts = buf->dts;
+          gst_pad_push(filter->srcpad, buf);
+          gst_buffer_unref(buf0);
+          gst_caps_unref(caps);
+          filter->imv->UnLock(filter->imv);
+          return GST_FLOW_OK;
+      }
+      filter->imv->camera->SetOutputVideoParams(filter->imv->outputBuf);
       if (filter->dewarp_prop)
       {
           value = gst_structure_get_value(filter->dewarp_prop, "view_1_pan");
@@ -405,28 +407,27 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       }
       if (filter->viewtype == 1)
       {
-          ctx->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
-          ctx->camera->SetPosition(&filter->view_2_pan, &filter->view_2_tilt, &filter->view_2_roll, &filter->view_2_zoom, IMV_Defs::E_COOR_ABSOLUTE, 2);
-          ctx->camera->SetPosition(&filter->view_3_pan, &filter->view_3_tilt, &filter->view_3_roll, &filter->view_3_zoom, IMV_Defs::E_COOR_ABSOLUTE, 3);
-          ctx->camera->SetPosition(&filter->view_4_pan, &filter->view_4_tilt, &filter->view_4_roll, &filter->view_4_zoom, IMV_Defs::E_COOR_ABSOLUTE, 4);
+          filter->imv->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
+          filter->imv->camera->SetPosition(&filter->view_2_pan, &filter->view_2_tilt, &filter->view_2_roll, &filter->view_2_zoom, IMV_Defs::E_COOR_ABSOLUTE, 2);
+          filter->imv->camera->SetPosition(&filter->view_3_pan, &filter->view_3_tilt, &filter->view_3_roll, &filter->view_3_zoom, IMV_Defs::E_COOR_ABSOLUTE, 3);
+          filter->imv->camera->SetPosition(&filter->view_4_pan, &filter->view_4_tilt, &filter->view_4_roll, &filter->view_4_zoom, IMV_Defs::E_COOR_ABSOLUTE, 4);
       }
       else if (filter->viewtype == 2 || filter->viewtype == 4)
       {
-          ctx->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
-          ctx->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 2);
+          filter->imv->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
+          filter->imv->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 2);
       }
       else
       {
-          ctx->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
+          filter->imv->camera->SetPosition(&filter->view_1_pan, &filter->view_1_tilt, &filter->view_1_roll, &filter->view_1_zoom, IMV_Defs::E_COOR_ABSOLUTE, 1);
       }
-      ctx->camera->Update();
-      memcpy(odata, ctx->outputBuf->data, size);
-      gst_buffer_unmap(buf0, &mmap);
-      gst_buffer_unmap(buf, &map);
+      filter->imv->camera->Update();
       buf0->pts = buf->pts;
       buf0->dts = buf->dts;
 
       gst_pad_push(filter->srcpad, buf0);
+      gst_buffer_unmap(buf0, &mmap);
+      gst_buffer_unmap(buf, &map);
       gst_buffer_unref(buf);
       gst_caps_unref(caps);
   }
@@ -434,6 +435,7 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   {
       gst_pad_push(filter->srcpad, buf);
   }
+  filter->imv->UnLock(filter->imv);
   return GST_FLOW_OK;
 }
 

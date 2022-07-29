@@ -76,6 +76,8 @@ struct _Gstvicondewarp
 
   const GstStructure* dewarp_prop;
 
+  IMV_SYNC* imv;
+
   float view_1_pan;
   float view_1_tilt;
   float view_1_roll;
@@ -96,17 +98,6 @@ struct _Gstvicondewarp
   float view_4_roll;
   float view_4_zoom;
 };
-
-struct DWCONTEXT
-{
-	IMV_Buffer* inputBuf = NULL;
-	IMV_Buffer* outputBuf = NULL;
-	IMV_CameraInterface* camera;
-	int width;
-	int height;
-};
-
-DWCONTEXT* ctx;
 
 G_END_DECLS
 

@@ -279,7 +279,38 @@ public :
 	unsigned long GetFlatSurfaceModel(int flatSurfaceIndex, int* nbVertex2D,Vertex2D** v1, Vertex2D **txCoords);
 	unsigned long GetRectangleSurface(int numMesh, int* nbVertex2D, int rectangleSurfaceIndex,Vertex2D** v1, Vertex2D **txCoords);
 } ;
-
-
+#include <windows.h>
+void* instance = NULL;
+class IMV_SYNC
+{
+public:
+	HANDLE mutex;
+	IMV_CameraInterface* camera;
+	IMV_Buffer* inputBuf;
+	IMV_Buffer* outputBuf;
+	static void* getInstance()
+	{
+		if (instance == NULL)
+		{
+			IMV_SYNC* ic = new IMV_SYNC();
+			ic->camera = new IMV_CameraInterface;
+			ic->inputBuf = new IMV_Buffer;
+			ic->outputBuf = new IMV_Buffer;
+			ic->mutex = CreateMutex(NULL, FALSE, NULL);
+			instance = (void *)(ic);
+		}
+		return instance;
+	}
+	void Lock(void *ctx)
+	{
+		IMV_SYNC* sync = (IMV_SYNC*)ctx;
+		WaitForSingleObject(sync->mutex, INFINITE);
+	}
+	void UnLock(void *ctx)
+	{
+		IMV_SYNC* sync = (IMV_SYNC*)ctx;
+		ReleaseMutex(sync->mutex);
+	}
+};
 #endif
 // EOF
