@@ -520,59 +520,76 @@ gst_d3d11_crop_transform(GstBaseTransform* trans, GstBuffer* inbuf,
 
     device_handle = gst_d3d11_device_get_device_handle(device);
     context_handle = gst_d3d11_device_get_device_context_handle(device);
-    if (!gst_d3d11_buffer_map(inbuf, device_handle, in_map, GST_MAP_READ)) {
-        goto invalid_memory;
-    }
-
-    if (!gst_d3d11_buffer_map(outbuf, device_handle, out_map, GST_MAP_WRITE)) {
-        gst_d3d11_buffer_unmap(inbuf, in_map);
-        goto invalid_memory;
-    }
-    gst_d3d11_device_lock(device);
     for (int i = 0; i < gst_buffer_n_memory(outbuf); i++) {
-        GstD3D11Memory* mem =
-            (GstD3D11Memory*)gst_buffer_peek_memory(outbuf, i);
-
-        guint subidx;
+        GstMemory* dst_mem, * src_mem;
+        GstD3D11Memory* dst_dmem, * src_dmem;
+        GstMapInfo dst_info;
+        GstMapInfo src_info;
+        ID3D11Resource* dst_texture, * src_texture;
+        ID3D11DeviceContext* device_context;
+        GstD3D11Device* device;
         D3D11_BOX src_box = { 0, };
-        D3D11_TEXTURE2D_DESC src_desc;
-        D3D11_TEXTURE2D_DESC dst_desc;
+        D3D11_TEXTURE2D_DESC dst_desc, src_desc;
+        guint dst_subidx, src_subidx;
 
-        subidx = gst_d3d11_memory_get_subresource_index(mem);
-        gst_d3d11_memory_get_texture_desc(mem, &dst_desc);
-        int x = crop->left;
-        int y = crop->top;
-        int w = (crop->width - crop->right) - (crop->left);//crop->left + crop->right;
-        int h = (crop->height - crop->bottom) - (crop->top);//crop->top  + crop->bottom;
+        dst_mem = gst_buffer_peek_memory(outbuf, i);
+        src_mem = gst_buffer_peek_memory(inbuf, i);
 
+        dst_dmem = (GstD3D11Memory*)dst_mem;
+        src_dmem = (GstD3D11Memory*)src_mem;
 
-        if (i == 0)
-        {
-            src_box.left = x;
-            src_box.top  = y;
-            src_box.front = 0;
-            src_box.back = 1;
-            src_box.right  = (x+w);//MIN(src_desc.Width, dst_desc.Width);
-            src_box.bottom = (y+h);//MIN(src_desc.Height, dst_desc.Height);
-        }
-        else
-        {
-            src_box.left = (x/2);
-            src_box.top  = (y/2);
-            src_box.front = 0;
-            src_box.back = 1;
-            src_box.right  = ((x+w)/2);//MIN(src_desc.Width, dst_desc.Width);
-            src_box.bottom = ((y+h)/2);//MIN(src_desc.Height, dst_desc.Height);
-
+        device = dst_dmem->device;
+        if (device != src_dmem->device) {
+            g_print("different device, perform fallback copy");
+            // return gst_d3d11_buffer_copy_into_fallback(dst, src, info);
         }
 
-        context_handle->CopySubresourceRegion((ID3D11Resource*)out_map[i].data,
-            subidx, 0, 0, 0, (ID3D11Resource*)in_map[i].data, 0, &src_box);
+        gst_d3d11_memory_get_texture_desc(dst_dmem, &dst_desc);
+        gst_d3d11_memory_get_texture_desc(src_dmem, &src_desc);
+
+        if (dst_desc.Format != src_desc.Format) {
+            g_print("different dxgi format");
+            // return FALSE;
+        }
+
+        device_context = gst_d3d11_device_get_device_context_handle(device);
+
+        if (!gst_memory_map(dst_mem, &dst_info,
+            (GstMapFlags)(GST_MAP_WRITE | GST_MAP_D3D11))) {
+            g_print("Cannot map dst d3d11 memory");
+            //return FALSE;
+        }
+
+        if (!gst_memory_map(src_mem, &src_info,
+            (GstMapFlags)(GST_MAP_READ | GST_MAP_D3D11))) {
+            GST_ERROR("Cannot map src d3d11 memory");
+            gst_memory_unmap(dst_mem, &dst_info);
+            return GST_FLOW_ERROR;
+        }
+
+        dst_texture = (ID3D11Resource*)dst_info.data;
+        src_texture = (ID3D11Resource*)src_info.data;
+
+        /* src/dst texture size might be different if padding was used.
+         * select smaller size */
+        src_box.left = crop->left;
+        src_box.top = crop->top;
+        src_box.front = 0;
+        src_box.back = 1;
+        src_box.right = crop->left + MIN(src_desc.Width, dst_desc.Width);
+        src_box.bottom = crop->top + MIN(src_desc.Height, dst_desc.Height);
+
+        dst_subidx = gst_d3d11_memory_get_subresource_index(dst_dmem);
+        src_subidx = gst_d3d11_memory_get_subresource_index(src_dmem);
+
+        gst_d3d11_device_lock(device);
+        device_context->CopySubresourceRegion(dst_texture, dst_subidx, 0, 0, 0,
+            src_texture, src_subidx, &src_box);
+        gst_d3d11_device_unlock(device);
+
+        gst_memory_unmap(src_mem, &src_info);
+        gst_memory_unmap(dst_mem, &dst_info);
     }
-    gst_d3d11_device_unlock(device);
-
-    gst_d3d11_buffer_unmap(inbuf, in_map);
-    gst_d3d11_buffer_unmap(outbuf, out_map);
 
     return GST_FLOW_OK;
 
