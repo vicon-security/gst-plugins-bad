@@ -425,9 +425,9 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       buf0->pts = buf->pts;
       buf0->dts = buf->dts;
 
-      gst_pad_push(filter->srcpad, buf0);
       gst_buffer_unmap(buf0, &mmap);
       gst_buffer_unmap(buf, &map);
+      gst_pad_push(filter->srcpad, buf0);
       gst_buffer_unref(buf);
       gst_caps_unref(caps);
   }
