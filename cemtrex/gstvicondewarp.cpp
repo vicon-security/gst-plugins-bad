@@ -360,7 +360,7 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
           gst_buffer_unmap(buf, &map);
           buf0->pts = buf->pts;
           buf0->dts = buf->dts;
-          gst_pad_push(filter->srcpad, buf);
+          gst_pad_push(filter->srcpad, NULL);
           gst_buffer_unref(buf0);
           gst_caps_unref(caps);
           filter->imv->UnLock(filter->imv);
