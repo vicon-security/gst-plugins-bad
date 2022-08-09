@@ -325,11 +325,6 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
       odata = mmap.data;
       idata = map.data;
-
-      filter->imv->camera->SetLens((char*)filter->lensname);
-
-      filter->imv->camera->SetZoomLimits(24, 180);
-
       
       filter->imv->outputBuf->data = mmap.data;
       filter->imv->outputBuf->frameWidth = width;
@@ -347,8 +342,9 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
       filter->imv->inputBuf->width = width;
       filter->imv->inputBuf->height = height;
 
+      filter->imv->camera->SetLens((char*)filter->lensname);
       unsigned long iResult = filter->imv->camera->SetVideoParams(filter->imv->inputBuf, filter->imv->outputBuf,
-          IMV_Defs::E_YUV_NV12, filter->viewtype, filter->mountpos);
+          IMV_Defs::E_YUV_NV12 | IMV_Defs::E_OBUF_BOTTOMUP, filter->viewtype, filter->mountpos);
       if (iResult == IMV_Defs::E_ERR_OK)
       {
           char* acsInfo = filter->imv->camera->GetACS();
@@ -366,7 +362,8 @@ gst_vicondewarp_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
           filter->imv->UnLock(filter->imv);
           return GST_FLOW_OK;
       }
-      filter->imv->camera->SetOutputVideoParams(filter->imv->outputBuf);
+
+      filter->imv->camera->SetZoomLimits(24, 180);
       if (filter->dewarp_prop)
       {
           value = gst_structure_get_value(filter->dewarp_prop, "view_1_pan");
